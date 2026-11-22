@@ -28,7 +28,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           echo "扫描 .github/release-notes-v*.md …"
           count=0
           for notes in .github/release-notes-v*.md; do
@@ -40,8 +40,9 @@ jobs:
               echo "✓ $tag 说明已回填"
             else
               # 0.6.3 的 Release 在覆盖重写时丢了，这里按 tag + 说明重建页面。
-              # tag 本身存在，gh release create 会挂到该 tag 的提交上；资产缺失但说明可见。
-              gh release create "$tag" --notes-file "$notes" --title "ApkStart $tag"
+              # 关键：v0.6.3 是 annotated tag，必须 --verify-tag 让 gh 复用远端
+              # 已有 tag，否则 gh 会试图在 HEAD 重建轻量 tag 并被远端拒绝。
+              gh release create "$tag" --verify-tag --notes-file "$notes" --title "ApkStart $tag"
               echo "✓ $tag Release 缺失，已按说明重建"
             fi
           done
