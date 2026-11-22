@@ -172,6 +172,13 @@ async function upload(releaseId, file, attempts = 3) {
     console.log('   已创建 id =', rel.id);
   } else {
     console.log('   已存在 id =', rel.id);
+    // 已有 release 也要更新说明：以前只写 body 一次，历史版本的 Gitee 页面
+    // 永远停在默认的「便携版安装包…」一句话。有 notes 就 PATCH 回去，
+    // 只改 body、不碰附件，幂等安全。
+    if (notesFile && fs.existsSync(notesFile) && rel.id) {
+      await api('PATCH', `/releases/${rel.id}`, { body });
+      console.log('   说明已回填');
+    }
   }
 
   // 重发同一版本时（改过代码重新打包），旧附件必须先删掉，否则页面上会同时挂着

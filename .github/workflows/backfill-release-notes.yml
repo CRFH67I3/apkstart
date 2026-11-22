@@ -1,0 +1,66 @@
+name: Backfill Release Notes
+
+# 把 .github/release-notes-v*.md 的说明回填到所有已存在的 GitHub Release。
+# 起因：0.6.1~0.6.4 的 Release body 只有自动生成的「Full Changelog」一行，
+# 因为发布工作流只在「新建 Release」时写 notes，已有 Release 从不更新。
+# 这个工作流在 main 上 push 或手动触发时，逐个 tag 用 gh release edit 回填，
+# 幂等安全（说明内容一致时是空操作），不动任何资产。
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/release-notes-v*.md'
+      - '.github/workflows/backfill-release-notes.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    name: 回填各版本 Release 说明
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 逐个 tag 回填 GitHub 说明
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "扫描 .github/release-notes-v*.md …"
+          count=0
+          for notes in .github/release-notes-v*.md; do
+            [ -f "$notes" ] || continue
+            tag="$(basename "$notes" .md | sed 's/^release-notes-//')"
+            count=$((count+1))
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release edit "$tag" --notes-file "$notes" --title "ApkStart $tag"
+              echo "✓ $tag 说明已回填"
+            else
+              # 0.6.3 的 Release 在覆盖重写时丢了，这里按 tag + 说明重建页面。
+              # tag 本身存在，gh release create 会挂到该 tag 的提交上；资产缺失但说明可见。
+              gh release create "$tag" --notes-file "$notes" --title "ApkStart $tag"
+              echo "✓ $tag Release 缺失，已按说明重建"
+            fi
+          done
+          echo "完成：扫描 $count 份说明文件"
+
+      - name: 回填 Gitee 说明
+        continue-on-error: true
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${GITEE_TOKEN:-}" ]; then
+            echo "· 无 GITEE_TOKEN，跳过 Gitee 回填"
+            exit 0
+          fi
+          # publish-gitee.js 需要 --zip；回填模式给它一个占位文件即可，
+          # 已存在 release 只走 PATCH body 分支，不会真的上传附件。
+          for notes in .github/release-notes-v*.md; do
+            [ -f "$notes" ] || continue
+            tag="$(basename "$notes" .md | sed 's/^release-notes-//')"
+            node tools/backfill-gitee-notes.js "$tag" --notes "$notes" || true
+          done
