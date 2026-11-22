@@ -1061,6 +1061,7 @@ function fillSettings(s) {
   if ($('setMirrorPrefix')) $('setMirrorPrefix').value = (s.runtime && s.runtime.mirrorPrefix) || '';
   if ($('setConnections')) $('setConnections').value = Number((s.runtime && s.runtime.downloadConnections) || 8);
   $('setAudio').checked = s.engine.audio !== false;
+  if ($('setMicrophone')) $('setMicrophone').checked = s.engine.microphone !== false;
   $('setLiteMode').checked = s.engine.liteMode !== false;
   $('setPrewarm').checked = s.engine.prewarm !== false;
   $('setPriorityMode').value = ['performance', 'game'].includes(s.engine.priorityMode)
@@ -1086,6 +1087,7 @@ function fillSettings(s) {
   $('setAutoStart').checked = s.autoStart !== false;
   const eng = s.engine || {};
   if ($('setResourceMode')) $('setResourceMode').value = eng.resourceMode || 'balanced';
+  if ($('setGpuPreference')) $('setGpuPreference').value = eng.gpuPreference || 'auto';
   if ($('setRenderSize')) $('setRenderSize').value = eng.renderSize || 'auto';
   if ($('setDataGB')) $('setDataGB').value = String(Number(eng.dataPartitionGB || 0));
   if ($('setFastDns')) $('setFastDns').checked = eng.fastDns !== false;
@@ -1449,6 +1451,18 @@ async function openSettings() {
   api.doctorProfile().then((r) => {
     if (r && r.text) $('autoProfileText').textContent = r.text;
   }).catch(() => { $('autoProfileText').textContent = '自动模式'; });
+  // 显卡偏好：显示 Windows 是否真的应用了（支持但没生效时提示重启安卓）
+  if ($('gpuPrefNote') && api.gpuStatus) {
+    api.gpuStatus().then((g) => {
+      if (!g || !g.supported) { $('gpuPrefNote').textContent = '（当前系统不支持此设置）'; return; }
+      const applied = g.applied || 'auto';
+      const want = g.mode || 'auto';
+      const label = { auto: '系统默认', discrete: '独显', integrated: '核显' };
+      $('gpuPrefNote').textContent = applied === want || want === 'auto'
+        ? `（已生效：${label[applied] || applied}）`
+        : `（已选 ${label[want] || want}，下次启动安卓后生效）`;
+    }).catch(() => {});
+  }
   api.runtimeUsage().then((u) => {
     $('usageText').textContent = u
       ? `共 ${u.totalText}${u.reclaimable ? ` · 可回收 ${u.reclaimableText}（${u.count} 项）` : ' · 已是精简状态'}`
@@ -1676,6 +1690,12 @@ function bindSettings() {
       toast({ title: '资源策略已切换', body: '下一次打开应用生效', type: 'ok' });
     });
   }
+  if ($('setGpuPreference')) {
+    $('setGpuPreference').addEventListener('change', (e) => {
+      save({ engine: { gpuPreference: e.target.value } });
+      toast({ title: '显卡偏好已保存', body: '下一次启动安卓时生效', type: 'ok' });
+    });
+  }
   if ($('setRenderSize')) {
     $('setRenderSize').addEventListener('change', (e) => save({ engine: { renderSize: e.target.value } }));
   }
@@ -1778,6 +1798,9 @@ function bindSettings() {
     });
   }
   $('setAudio').addEventListener('change', (e) => save({ engine: { audio: e.target.checked } }));
+  if ($('setMicrophone')) {
+    $('setMicrophone').addEventListener('change', (e) => save({ engine: { microphone: e.target.checked } }));
+  }
   $('setLiteMode').addEventListener('change', (e) => save({ engine: { liteMode: e.target.checked } }));
   $('setPrewarm').addEventListener('change', (e) => save({ engine: { prewarm: e.target.checked } }));
   $('setPriorityMode').addEventListener('change', (e) => save({ engine: { priorityMode: e.target.value } }));
@@ -2824,6 +2847,21 @@ async function fixIssue(issue) {
       // MSIX / 普通权限都拿不到系统服务的提权操作，直接把教程送到用户面前
       toast({ title: '需要手动启动 Windows Audio', body: '已打开教程，照着做一次即可', type: 'info', sticky: true });
       openManualForIssue(issue, 'clicked');
+      break;
+    }
+    case 'microphone': {
+      const t = toast({ title: '正在打开麦克风输入…', body: '马上重启运行时让录音设备生效', type: 'info', sticky: true, spinner: true });
+      const s = await api.setSettings({ engine: { microphone: true } }).catch(() => null);
+      if (!s) { failFix(issue, t, '没能保存麦克风设置，已打开对应教程'); break; }
+      state.settings = s;
+      fillSettings(s);
+      const r = await api.restartRuntime().catch(() => ({ ok: false }));
+      if (r && r.ok !== false) {
+        t.update({ title: '麦克风已打开', body: '运行时已重启，应用现在应该能录音了', type: 'ok' });
+        setTimeout(t.dismiss, 3600);
+      } else {
+        failFix(issue, t, '麦克风开关已打开，但运行时重启失败，已打开对应教程');
+      }
       break;
     }
     case 'repairNetwork': {

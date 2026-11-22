@@ -1,6 +1,6 @@
 'use strict';
 /**
- * 内置手册映射测试（0.6.3）
+ * 内置手册映射测试（0.6.4）
  *
  * 重点守两件事：
  *  1) 每个章节锚点都必须真的存在于随包分发的 src/ui/manual.html；
@@ -38,8 +38,8 @@ test('每个主题的锚点都存在于随包 HTML', () => {
   }
 });
 
-test('手册正文包含 0.6.3 版本号与声音章节', () => {
-  assert(html.includes('v0.6.3'), '手册应标注 v0.6.3');
+test('手册正文包含 0.6.4 版本号与声音章节', () => {
+  assert(html.includes('v0.6.4'), '手册应标注 v0.6.4');
   assert(html.includes('应用没有声音'), '手册应有声音排障章节');
   assert(html.includes('内置使用手册与自动教程'), '手册应说明自动教程');
 });
@@ -66,6 +66,12 @@ test('声音开关与服务停止都定位到 6.7', () => {
   assert(manual.topicForIssue({ code: 'audio.windowsServiceStopped' }).id === 'sound', '音频服务应到 6.7');
 });
 
+test('麦克风定位到 6.9，声音/麦克风不会串到同一节', () => {
+  assert(manual.topicForIssue({ code: 'audio.microphoneDisabled' }).id === 'mic', '麦克风应到 6.9');
+  const micTopic = manual.resolve({ issue: 'audio.microphoneDisabled' });
+  assert(micTopic.anchor.includes('6-9'), `锚点应指向 6.9，实际 ${micTopic.anchor}`);
+});
+
 test('DLL / VC++ 诊断问题定位到 6.8', () => {
   assert(manual.topicForIssue({ code: 'DLL', title: '运行时依赖 DLL 加载失败' }).id === 'dll', 'DLL 分类应到 6.8');
   assert(manual.topicForIssue({ code: 'vcRedist', title: '缺少 VC++ 运行库' }).id === 'dll', 'VC++ 实测项应到 6.8');
@@ -80,6 +86,14 @@ test('启动失败带 ARM 日志时优先定位到 6.3', () => {
     detail: 'DoBadTrampoline libndk_translation',
   });
   assert(t.id === 'arm', `应定位到 arm，实际 ${t.id}`);
+});
+
+test('反模拟 / 安全校验导致的启动退出也定位到 6.3', () => {
+  for (const detail of ['emulator detected', 'SafetyNet attest failed', '反调试 hook detected']) {
+    const t = manual.topicForIssue({ code: 'runtime.bootFailed', title: '应用启动退出', detail });
+    assert(t.id === 'arm', `${detail} 应定位到 arm，实际 ${t.id}`);
+  }
+  assert(manual.topicForError('play integrity failed 主动退出').id === 'arm', '原始报错也应到 arm');
 });
 
 test('普通启动失败定位到 6.5', () => {
@@ -141,6 +155,7 @@ test('安装失败与修复失败都会自动打开对应教程', () => {
   assert(/openManualForError\(raw, 'install-failed'\)/.test(js), '安装失败未自动开教程');
   assert(/function failFix\([\s\S]*openManualForIssue\(issue, 'fix-failed'\)/.test(js), '修复失败未自动开教程');
   assert(/case 'audioService'/.test(js) && /case 'audio':/.test(js), '声音修复动作未接入');
+  assert(/case 'microphone':/.test(js), '麦克风修复动作未接入');
 });
 
 test('诊断条目带教程按钮', () => {

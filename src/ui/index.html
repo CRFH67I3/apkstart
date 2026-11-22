@@ -419,6 +419,15 @@
           </select>
           <span class="sub">决定安卓虚拟机吃多少 CPU、画面多细腻。红果/抖音发卡就切「流畅」，只想挂着跑小应用就切「省资源」。改完下一次打开应用生效。</span>
         </div>
+        <div class="field">
+          <label>显卡偏好（独显 / 核显）</label>
+          <select id="setGpuPreference">
+            <option value="auto">系统默认（推荐 · 让 Windows 决定）</option>
+            <option value="discrete">独显优先（游戏 / 视频更流畅，更耗电）</option>
+            <option value="integrated">核显优先（省电、发热低）</option>
+          </select>
+          <span class="sub">电脑同时有独显和核显时，Windows 有时会把模拟器分到核显，导致画面卡。这里可以明确指定用哪块显卡渲染；仅 Windows 10 1803+ 生效，改动在下次启动安卓时应用。<span id="gpuPrefNote" class="inline-note"></span></span>
+        </div>
         <div class="field two">
           <div>
             <label>画质（安卓内部渲染分辨率）</label>
@@ -489,6 +498,13 @@
             <span class="sub">让应用提示音、视频声音正常播放。仅在你完全不需要声音、想再省一点 CPU 时关闭。</span>
           </div>
           <input type="checkbox" id="setAudio" class="switch" />
+        </div>
+        <div class="field switch-field">
+          <div>
+            <label>麦克风输入（推荐）</label>
+            <span class="sub">让应用能用电脑的麦克风语音、通话、录音。关掉后应用里查不到录音设备。仅在你担心隐私、完全不需要录音时关闭。</span>
+          </div>
+          <input type="checkbox" id="setMicrophone" class="switch" />
         </div>
         <div class="field switch-field">
           <div>

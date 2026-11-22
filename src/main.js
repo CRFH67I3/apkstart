@@ -38,6 +38,7 @@ function loadTrayIcon() {
   return nativeImage.createFromBuffer(drawAppIcon(16));
 }
 const assoc = require('./core/assoc');
+const gpupref = require('./core/gpupref');
 const windowctl = require('./core/windowctl');
 const display = require('./core/display');
 const { WinAgent } = require('./core/agent');
@@ -297,6 +298,33 @@ async function decodeIcon(raw) {
   })()`;
   const url = await decodeWindow.webContents.executeJavaScript(js);
   return Buffer.from(String(url).split(',')[1] || '', 'base64');
+}
+
+/**
+ * 独显/核显渲染偏好：把 engine.gpuPreference 写进 Windows UserGpuPreferences。
+ * Windows 10 1803+ 才有这个机制；写 HKCU 不需要管理员。只针对 emulator.exe，
+ * 因为真正做 OpenGL/D3D 渲染的是它（不是 Electron 主进程）。
+ * 任何失败都静默：这是「让独显/核显真正被用上」的增强，绝不能拖垮启动。
+ */
+function applyGpuPreference() {
+  if (process.platform !== 'win32' || NO_SHELL_PROBE) return { ok: false, skipped: true };
+  try {
+    const mode = (store.getSettings().engine || {}).gpuPreference || 'auto';
+    let exe = '';
+    try {
+      const p = new (require('./core/provision').Provisioner)(APP_ROOT).paths();
+      exe = [p.emulatorExe, path.join(APP_ROOT, 'engine', 'emulator', 'emulator.exe')]
+        .find((c) => c && fs.existsSync(c)) || p.emulatorExe;
+    } catch (_) { /* 拿不到路径就不写 */ }
+    const cmd = gpupref.preferenceCommand(exe, mode);
+    if (!cmd) return { ok: false, skipped: true };
+    const { execFileSync } = require('child_process');
+    execFileSync('reg', cmd.args, { windowsHide: true, stdio: 'pipe', timeout: 5000 });
+    appLog(`gpuPreference=${mode} -> ${cmd.action} ${exe}`);
+    return { ok: true, mode, action: cmd.action };
+  } catch (_) {
+    return { ok: false };
+  }
 }
 
 /** 开机自启：默认开启，不需要用户去设置里勾 */
@@ -1750,6 +1778,10 @@ function registerIpc() {
     )) {
       refreshPointerMapping();
     }
+    // 独显/核显偏好变了：立刻改写 emulator.exe 的 GPU 偏好，下次启动运行时生效
+    if (patch && patch.engine && 'gpuPreference' in patch.engine) {
+      applyGpuPreference();
+    }
     // 换了更新源 / 镜像前缀 / 整包地址：之前那套「谁最快」的结论不再成立，清掉测速缓存；
     // 运行时整包 / 引擎 / 镜像的地址还缓存在 provisioner._cache 里，不清掉就要重启进程才生效。
     if (patch && patch.runtime && (
@@ -2635,6 +2667,25 @@ function registerIpc() {
 
   ipcMain.handle('assoc:unregister', () => assoc.unregisterAssociation());
 
+  // 独显/核显偏好：返回当前模式与是否 Windows 支持（供设置页显示）
+  ipcMain.handle('gpu:status', () => {
+    const mode = gpupref.normalize((store.getSettings().engine || {}).gpuPreference);
+    let applied = 'unknown';
+    if (process.platform === 'win32' && !NO_SHELL_PROBE) {
+      try {
+        const { execFileSync } = require('child_process');
+        const p = new (require('./core/provision').Provisioner)(APP_ROOT).paths();
+        const exe = [p.emulatorExe, path.join(APP_ROOT, 'engine', 'emulator', 'emulator.exe')]
+          .find((c) => c && fs.existsSync(c)) || p.emulatorExe;
+        const out = execFileSync('reg', ['query', gpupref.KEY, '/v', exe], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        const m = /REG_SZ\s+(.*)$/im.exec(String(out));
+        applied = m ? gpupref.parseValue(m[1]) : 'auto';
+      } catch (_) { applied = 'auto'; }
+    }
+    return { mode, applied, supported: process.platform === 'win32' };
+  });
+  ipcMain.handle('gpu:apply', () => applyGpuPreference());
+
   ipcMain.handle('share:sync', async () => sharer.sync({ onLog: (m) => send('runtime:log', m) }));
   ipcMain.handle('share:open', async () => {
     const dir = store.getSettings().sharedDir;
@@ -2898,6 +2949,8 @@ if (!gotLock) {
     runtime = new Runtime(APP_ROOT);
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
+    // 恢复上次选的独显/核显偏好（emulator.exe 可能被重装/更新，注册表值会丢）
+    applyGpuPreference();
 
     // ---- 开机动画窗口 ----
     // 仿抖音 DSH 风格：Logo 渐显 + 进度条 + 状态文字。

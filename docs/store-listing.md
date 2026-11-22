@@ -1,4 +1,4 @@
-# Microsoft Store 提交材料（ApkStart 0.6.3）
+# Microsoft Store 提交材料（ApkStart 0.6.4）
 
 > 这份文件是给 Partner Center 表单直接复制用的。包体、图标、清单由脚本产出，
 > 只有「注册账号 → 预留名称 → 上传 → 送审」必须在网页上人工完成。
@@ -12,7 +12,7 @@
 | Product name | `ApkStart` |
 | Category | Developer tools → Utilities & tools（备选：Productivity） |
 | Price | Free |
-| Package | `dist/store/ApkStart_0.6.3.0_x64.msix`（x64，约 1.5 GB） |
+| Package | `dist/store/ApkStart_0.6.4.0_x64.msix`（x64，约 1.5 GB） |
 | 支持语言 | 简体中文 / English (United States) |
 | 官网 | https://github.com/RoutineMiku/apkstart |
 | 支持邮箱 | <!-- 填你的邮箱 --> |
@@ -22,7 +22,14 @@
 
 **中文**
 ```
-0.6.3：
+0.6.4 更新：
+· App 可用电脑麦克风：修复模拟器配置把录音输入写死为「无」的问题，语音、通话、录音类应用现在能调用 PC 麦克风；设置 → 性能与资源新增「麦克风输入」开关（默认开启）。自动检测能发现麦克风被关并一键恢复；排查步骤见内置手册 6.9 节。
+· 独显/核显渲染生效：修复显卡被一律降级为软件渲染的问题，NVIDIA/AMD/Intel 一律优先用真实显卡（host）渲染，游戏和视频更流畅；崩溃时仍自动逐级降级，不影响稳定。设置新增「显卡偏好」下拉：系统默认 / 独显优先 / 核显优先，并显示是否已生效；说明见手册 6.10 节。
+· 转译层与反模拟诊断更准：修复 ARM 翻译层崩溃「自动切镜像重试」实际永不执行的死逻辑，改为按运行时真实翻译能力判断——翻译层已生效时如实告知属于应用兼容性限制，不再让你白等重启；对带反模拟/反调试检测的应用新增中文说明，明确这是限制而非故障。内置手册 6.3 节同步更新。
+· 声音开关更聪明：关闭安卓声音但保留麦克风时不再误关整条音频链路。
+· 保留 0.6.3 的启动动画焕新、应用提速、实验室多开、增量更新，以及 0.6.2 的内置手册与故障自动教程。
+
+0.6.3（已包含）：
 · 启动动画焕新：极简苹果风——柔和光晕、图标缓慢呼吸、细腻淡入淡出；图标改用完整源不再缺角，且至少完整播放约 2 秒，不再一闪而过。打开应用时动画保持到画出第一屏才淡出，不提前露白底。
 · 打开应用更快：合并窗口接管时的重复等待、加快进程存活探测，点开到出画面更利落。
 · 设置新增「实验室」分组，含「Windows 原生多窗口多开（实验性）」开关：开启后多个应用可驻留后台、随时切回并保留登录态（默认关闭）。受限于单一模拟器窗口，同一时刻仍只显示一个应用画面。
@@ -109,7 +116,14 @@
 
 **English**
 ```
-0.6.3:
+What's new in 0.6.4:
+· Apps can now use your PC microphone: fixed the emulator config that hard-coded audio input to "none", so voice, calling and recording apps work. New "Microphone input" switch under Settings → Performance & Resources (on by default). Auto-diagnostics detect a disabled microphone and restore it with one click; see manual section 6.9.
+· Discrete / integrated GPU rendering now works: fixed GPUs being forced to software rendering. NVIDIA, AMD and Intel all prefer real-GPU (host) rendering first for smoother games and video, with automatic fallback still in place. New "GPU preference" dropdown: System default / Discrete GPU / Integrated GPU, with an applied indicator; see manual section 6.10.
+· More accurate translation-layer and anti-emulator diagnosis: fixed dead logic where ARM translation crashes never triggered the "switch image and retry" path; it now checks the runtime's real translation capability, and reports an app-compatibility limit honestly instead of a pointless restart. Added a clear Chinese explanation for apps with anti-emulator / anti-debugging detection. Manual section 6.3 updated.
+· Smarter sound switch: turning off Android sound while keeping the microphone no longer shuts down the whole audio chain.
+· Keeps 0.6.3 features (refreshed animation, faster launches, Labs multi-window, incremental updates) and 0.6.2 features (built-in manual, automatic help).
+
+0.6.3 (included):
 · Refreshed launch animation in a minimal Apple-inspired style: soft glow, a gently breathing icon and smooth fades. The icon uses the full-resolution source (no clipped corners) and plays for at least ~2s instead of flashing by. When opening an app it stays until the first frame is drawn instead of showing the white splash early.
 · Faster app launches: merged duplicate waits during window hand-over and sped up process-alive detection.
 · New "Labs" settings section with an experimental "Windows native multi-window" switch: when on, multiple apps stay resident and can be switched back to instantly with login state kept (off by default). One emulator window still shows one app at a time.
@@ -399,7 +413,7 @@ Notes:
    ```powershell
    node build/msix.js --identity "<Identity/Name>" --publisher "<Identity/Publisher>"
    ```
-4. **Packages** → 上传 `dist/store/ApkStart_0.6.3.0_x64.msix`，等待校验通过。
+4. **Packages** → 上传 `dist/store/ApkStart_0.6.4.0_x64.msix`，等待校验通过。
 5. **Store listing** → 填第 2–5 节的内容、上传截图、选分类。
 6. **Pricing and availability** → Free，市场选中国 + 全球。
 7. **Submission options** → 粘贴第 6 节的 certification notes。

@@ -158,6 +158,23 @@ app.whenReady().then(async () => {
 
   await win.capturePage().then((img) => fs.writeFileSync(path.join(OUT, 'settings-display.png'), img.toPNG()));
 
+  // 点「性能与资源」，看麦克风与显卡偏好
+  await evalJs(`document.querySelector('#setNav .set-nav-item[data-cat="perf"]').click()`);
+  await new Promise((r) => setTimeout(r, 300));
+  const perf = await evalJs(`(() => {
+    const mic = document.getElementById('setMicrophone');
+    const gpu = document.getElementById('setGpuPreference');
+    return {
+      hasMic: !!mic,
+      micChecked: mic ? mic.checked : false,
+      hasGpu: !!gpu,
+      gpuOptions: gpu ? Array.from(gpu.options).map(o => o.value) : [],
+      gpuValue: gpu ? gpu.value : '',
+    };
+  })()`);
+  step('性能页有麦克风开关且默认开启', perf.hasMic && perf.micChecked, `mic=${perf.hasMic} checked=${perf.micChecked}`);
+  step('性能页有显卡偏好下拉（自动/独显/核显）', perf.hasGpu && ['auto', 'discrete', 'integrated'].every((v) => perf.gpuOptions.includes(v)), perf.gpuOptions.join(','));
+
   // 点「实验室」，看多开开关
   await evalJs(`document.querySelector('#setNav .set-nav-item[data-cat="lab"]').click()`);
   await new Promise((r) => setTimeout(r, 300));

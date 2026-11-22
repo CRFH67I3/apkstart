@@ -104,10 +104,15 @@ function detectGpuVendor() {
  * 因此必须按版本挑候选，且每个候选都有退路。
  *
  * 按 GPU 厂商微调优先级：
- *   NVIDIA：host 几乎总是最优（驱动成熟），swangle 兜底
- *   AMD：host 在部分驱动下会崩（尤其老驱动），swangle 提到第二优先
- *   Intel：host 通常 OK，但集显性能弱时 swangle 更稳
- *   unknown：保持默认顺序
+ *   0.6.4 起【默认一律 host 优先】——host 才是真正调用 PC 的独显/核显做硬件渲染。
+ *      之前 AMD 一律被降到 swangle（软件渲染），等于主动放弃显卡，独显机器也跑软件，
+ *      这是「核显/独显渲染能力用不上」的根因。现在改为：
+ *        - host 放第一，让有显卡的机器真正吃到硬件加速；
+ *        - host 若在这台机器上崩，start() 的崩溃记忆（badGpu）会把 host 排到最后，
+ *          下次自动改用 swangle/software，不会卡在崩溃里；
+ *        - AMD host 的 Vulkan 崩溃另有 -feature -Vulkan 规避（见 emulator.buildArgs）；
+ *        - 驱动补丁（drivers/）仍可显式固定 swangle，给个别老核显兜底。
+ *   software / swangle 始终是候选，保证没有显卡或老驱动时还能出画面。
  */
 function gpuCandidates(emulatorVersion) {
   const [major, minor, patch] = versionNumbers(emulatorVersion);
@@ -115,11 +120,6 @@ function gpuCandidates(emulatorVersion) {
   const base = modern
     ? ['host', 'swangle', 'software', 'swiftshader']
     : ['host', 'swiftshader_indirect', 'swiftshader'];
-  const vendor = detectGpuVendor();
-  if (vendor === 'amd' && modern) {
-    // AMD 驱动在某些版本下 host 模式会 GL 初始化失败，把 swangle 提到前面
-    return ['swangle', 'host', 'software', 'swiftshader'];
-  }
   return base;
 }
 
