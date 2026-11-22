@@ -72,14 +72,24 @@ jobs:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         shell: bash
         run: |
+          echo "## Gitee 回填结果" >> "$GITHUB_STEP_SUMMARY"
           if [ -z "${GITEE_TOKEN:-}" ]; then
+            echo "- ⚠ 未配置 GITEE_TOKEN secret，Gitee 说明无法回填（GitHub 端不受影响）" >> "$GITHUB_STEP_SUMMARY"
             echo "· 无 GITEE_TOKEN，跳过 Gitee 回填"
             exit 0
           fi
-          # publish-gitee.js 需要 --zip；回填模式给它一个占位文件即可，
-          # 已存在 release 只走 PATCH body 分支，不会真的上传附件。
+          # 不再用 || true 吞掉错误：每个 tag 的结果写入 summary，便于诊断。
+          failed=0
           for notes in .github/release-notes-v*.md; do
             [ -f "$notes" ] || continue
             tag="$(basename "$notes" .md | sed 's/^release-notes-//')"
-            node tools/backfill-gitee-notes.js "$tag" --notes "$notes" || true
+            if out="$(node tools/backfill-gitee-notes.js "$tag" --notes "$notes" 2>&1)"; then
+              echo "- ✓ $tag: $out" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- ✗ $tag: $out" >> "$GITHUB_STEP_SUMMARY"
+              failed=$((failed+1))
+            fi
           done
+          if [ "$failed" -gt 0 ]; then
+            echo "- 共 $failed 个 tag 回填失败，请检查 GITEE_TOKEN 是否有效（需 releases 写权限）" >> "$GITHUB_STEP_SUMMARY"
+          fi
