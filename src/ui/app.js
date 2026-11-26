@@ -176,7 +176,7 @@ function renderGrid() {
           ? `<img src="${esc(a.iconUrl)}" alt="" draggable="false" />`
           : `<div class="fallback" style="background:${esc(a.accent || '#9aa6b2')}">${esc(initialOf(a.label))}</div>`}
       </div>
-      <div class="name">${esc(a.label)}</div>
+      <div class="name" data-i18n-skip>${esc(a.label)}</div>
       <div class="meta">${a.running ? '运行中' : `v${esc(a.versionName)}${a.lastLaunchAt ? ' · ' + relTime(a.lastLaunchAt) : ''}`}</div>
       <div class="open-hint">${a.running ? '切换到前台' : '打开'}</div>
     </div>
@@ -1050,8 +1050,10 @@ async function refreshDrivers() {
 function fillSettings(s) {
   syncBackendFields();
   refreshDrivers().catch(() => {});
+  if ($('setUiLanguage')) $('setUiLanguage').value = s.uiLanguage || 'auto';
   $('setAdbPath').value = s.adbPath || '';
   $('setSystemImage').value = s.runtime.isoPath || '';
+  if ($('setCustomSysImgDir')) $('setCustomSysImgDir').value = (s.runtime && s.runtime.customSysImgDir) || '';
   $('setMemory').value = s.engine.memoryMB;
   $('setCores').value = s.engine.cores;
   $('setIdle').value = s.engine.idleShutdownMinutes;
@@ -1617,6 +1619,18 @@ function bindSettings() {
     state.settings = await api.setSettings(patch);
   };
 
+  if ($('setUiLanguage')) {
+    $('setUiLanguage').addEventListener('change', async (e) => {
+      state.settings = await api.setSettings({ uiLanguage: e.target.value });
+      // 主进程会把新语言广播给所有窗口，i18n-dom.js 就地重译；不重载，设置页状态不丢
+      toast({
+        title: '界面语言已切换',
+        body: '已立即生效；安卓系统语言不受影响',
+        type: 'ok',
+      });
+    });
+  }
+
   if ($('btnPreflight')) $('btnPreflight').addEventListener('click', () => runPreflight());
   if ($('btnPreflightApply')) {
     $('btnPreflightApply').addEventListener('click', async () => {
@@ -1671,6 +1685,22 @@ function bindSettings() {
 
   $('setAdbPath').addEventListener('change', (e) => save({ adbPath: e.target.value.trim() }));
   $('setSystemImage').addEventListener('change', (e) => save({ runtime: { isoPath: e.target.value.trim() } }));
+  if ($('setCustomSysImgDir')) {
+    $('setCustomSysImgDir').addEventListener('change', (e) => save({ runtime: { customSysImgDir: e.target.value.trim() } }));
+  }
+  if ($('btnPickSysImgDir')) {
+    $('btnPickSysImgDir').addEventListener('click', async () => {
+      const r = await api.pickSysImgDir();
+      if (!r || r.canceled) return;
+      if (!r.ok) {
+        toast({ title: '镜像目录无效', body: r.note || r.error || '请选择一个含 system.img 与 kernel-ranchu 的目录', type: 'error' });
+        return;
+      }
+      $('setCustomSysImgDir').value = r.dir;
+      save({ runtime: { customSysImgDir: r.dir } });
+      toast({ title: '自定义镜像已设置', body: '下次启动安卓运行时将使用这个镜像，不再联网下载', type: 'ok' });
+    });
+  }
   // 内存 / 核心：填了具体值就关掉「自动」，填 0 又回到自动。
   // 旧代码只写 memoryMB，而 overridesFromSettings 只在 autoMemory=false 时才认它，
   // 于是「手动填了内存」一直被忽略 —— 这是设置页最容易被当成“没用”的一项。
@@ -2513,15 +2543,88 @@ async function init() {
   bindUpdate();
   bindAndroid();
   bindWelcome();
+  bindLanguagePicker();
   state.settings = await api.getSettings();
   await refreshStatus();
   await refreshApps();
   refreshAndroid();
   selfCheck();
-  maybeShowWelcome();
-  setInterval(refreshStatus, 6000);
-  setInterval(refreshApps, 15000);
-  setInterval(selfCheck, 60000);
+  // 首次打开先选语言；选完这次不弹欢迎卡，下次再弹，避免两层遮罩叠加。
+  const needLang = await maybeShowLanguagePicker();
+  if (!needLang) maybeShowWelcome();
+  startPolling();
+}
+
+/**
+ * 后台轮询调度：主窗口隐藏/最小化到托盘时暂停周期性刷新，可见时恢复。
+ * 这些轮询每次都要跨进程取状态、重建列表 DOM；窗口看不见时纯属白烧 CPU/内存，
+ * 而且会阻止渲染进程进入空闲。恢复时立刻刷新一次，保证界面不会显示旧数据。
+ */
+let pollTimers = [];
+let pollingActive = false;
+function startPolling() {
+  if (pollingActive) return;
+  pollingActive = true;
+  const schedule = () => {
+    stopPollTimers();
+    if (document.hidden) return; // 窗口不可见：不排任何定时器
+    pollTimers = [
+      setInterval(refreshStatus, 6000),
+      setInterval(refreshApps, 15000),
+      setInterval(selfCheck, 60000),
+    ];
+  };
+  document.addEventListener('visibilitychange', () => {
+    schedule();
+    if (!document.hidden) {
+      // 回到前台：立即补齐一次，不让用户看到停机期间的旧状态
+      refreshStatus().catch(() => {});
+      refreshApps().catch(() => {});
+    }
+  });
+  schedule();
+}
+function stopPollTimers() {
+  for (const t of pollTimers) clearInterval(t);
+  pollTimers = [];
+}
+
+/* ---------------- 首次语言选择 ---------------- */
+
+let pendingLang = null;
+
+function bindLanguagePicker() {
+  const mask = $('langMask');
+  if (!mask) return;
+  const confirm = $('langConfirm');
+  const opts = Array.from(document.querySelectorAll('#langGrid .lang-opt'));
+  for (const opt of opts) {
+    opt.addEventListener('click', () => {
+      pendingLang = opt.dataset.lang;
+      for (const o of opts) o.classList.toggle('active', o === opt);
+      if (confirm) confirm.disabled = false;
+    });
+  }
+  const finish = async (lang) => {
+    // 保存语言并把 uiLanguageSelected 置 true，之后不再打扰；主进程会广播新语言就地重译。
+    state.settings = await api.setSettings({ uiLanguage: lang, uiLanguageSelected: true });
+    mask.hidden = true;
+  };
+  if (confirm) confirm.addEventListener('click', () => { if (pendingLang) finish(pendingLang); });
+  if ($('langAuto')) $('langAuto').addEventListener('click', () => finish('auto'));
+}
+
+/** 返回 true 表示本次显示了语言选择卡（调用方据此跳过欢迎卡）。 */
+async function maybeShowLanguagePicker() {
+  const mask = $('langMask');
+  if (!mask) return false;
+  // 冒烟截图不要弹，否则挡住主界面
+  try { if ((await api.startupInfo()).smoke) return false; } catch (_) { /* ignore */ }
+  if (state.settings && state.settings.uiLanguageSelected === false) {
+    mask.hidden = false;
+    return true;
+  }
+  return false;
 }
 
 /* ---------------- 启动欢迎卡 ---------------- */
